@@ -24,6 +24,15 @@ app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+// Serve frontend (single-EC2 setup): serve Vite build from frontend/dist
+const frontendDistPath = path.join(__dirname, 'frontend', 'dist');
+app.use(express.static(frontendDistPath));
+
+// SPA fallback: send index.html for non-API routes
+app.get(/^(?!\/(auth|jobs|mfa|health)\b).*/, (req, res) => {
+  res.sendFile(path.join(frontendDistPath, 'index.html'));
+});
+
 app.listen(PORT, () => {
   console.log(`Video transcoding server running on port ${PORT}`);
 });
