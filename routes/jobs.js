@@ -253,6 +253,20 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
+// Admin-only: list all jobs across users (must be before parameterized routes)
+router.get('/all', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const db = getDatabase();
+    db.all('SELECT * FROM jobs ORDER BY created_at DESC', [], (err, rows) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      res.json(rows);
+    });
+  } catch (error) {
+    console.error('Admin list jobs error:', error);
+    res.status(500).json({ error: 'Failed to fetch all jobs' });
+  }
+});
+
 // Get specific job with download URLs (cached)
 router.get('/:jobId', authenticateToken, async (req, res) => {
   try {
@@ -441,17 +455,3 @@ router.delete('/:jobId', authenticateToken, async (req, res) => {
 });
 
 module.exports = router;
-
-// Admin-only: list all jobs across users
-router.get('/all', authenticateToken, isAdmin, async (req, res) => {
-  try {
-    const db = getDatabase();
-    db.all('SELECT * FROM jobs ORDER BY created_at DESC', [], (err, rows) => {
-      if (err) return res.status(500).json({ error: 'Database error' });
-      res.json(rows);
-    });
-  } catch (error) {
-    console.error('Admin list jobs error:', error);
-    res.status(500).json({ error: 'Failed to fetch all jobs' });
-  }
-});

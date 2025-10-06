@@ -9,14 +9,38 @@ const AdminJobs = () => {
   const [error, setError] = useState('');
 
   const isAdmin = Array.isArray(user?.groups) && user.groups.includes('Admins');
+  
+  // Debug logging
+  console.log('AdminJobs - user object:', user);
+  console.log('AdminJobs - groups:', user?.groups);
+  console.log('AdminJobs - isAdmin:', isAdmin);
 
   useEffect(() => {
     const load = async () => {
       try {
+        // Debug: check what tokens are available
+        const accessToken = localStorage.getItem('accessToken');
+        const idToken = localStorage.getItem('idToken');
+        console.log('AdminJobs - tokens available:', {
+          hasAccessToken: !!accessToken,
+          hasIdToken: !!idToken,
+          accessTokenPreview: accessToken ? accessToken.substring(0, 50) + '...' : 'none',
+          idTokenPreview: idToken ? idToken.substring(0, 50) + '...' : 'none'
+        });
+        
+        // Now that groups are working, try the API call
+        console.log('AdminJobs - attempting getAllJobs call');
         const data = await jobsAPI.getAllJobs();
         setJobs(data);
       } catch (e) {
-        setError(e.response?.data?.error || 'Failed to load jobs');
+        console.error('AdminJobs - error loading jobs:', e);
+        const errorMessage = e.response?.data?.error || e.message || 'Failed to load jobs';
+        console.log('AdminJobs - error details:', {
+          status: e.response?.status,
+          error: errorMessage,
+          url: e.config?.url
+        });
+        setError(errorMessage);
       } finally {
         setLoading(false);
       }
@@ -29,6 +53,10 @@ const AdminJobs = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="rounded-md bg-yellow-50 p-4">
           <p className="text-yellow-800 text-sm">You do not have admin access.</p>
+          <p className="text-yellow-700 text-xs mt-2">
+            Debug: User groups = {JSON.stringify(user?.groups)} | 
+            IsAdmin = {isAdmin.toString()}
+          </p>
         </div>
       </div>
     );

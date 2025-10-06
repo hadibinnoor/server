@@ -21,7 +21,36 @@ export const AuthProvider = ({ children }) => {
     
     if (accessToken && userData) {
       try {
-        setUser(JSON.parse(userData));
+        const parsedUser = JSON.parse(userData);
+        console.log('AuthContext - loading user from localStorage:', parsedUser);
+        
+        // Check if we need to refresh groups
+        if (!parsedUser.groups || parsedUser.groups.length === 0) {
+          console.log('AuthContext - no groups in localStorage, fetching from backend...');
+          authAPI.getUserGroups()
+            .then(groupsInfo => {
+              console.log('AuthContext - groups from backend (on load):', groupsInfo);
+              const updatedUser = {
+                ...parsedUser,
+                groups: groupsInfo.groups || [],
+                isAdmin: groupsInfo.isAdmin || false
+              };
+              localStorage.setItem('user', JSON.stringify(updatedUser));
+              setUser(updatedUser);
+            })
+            .catch(error => {
+              console.warn('AuthContext - failed to fetch groups on load:', error);
+              // Don't log out user if groups fetch fails - just use empty groups
+              const fallbackUser = {
+                ...parsedUser,
+                groups: [],
+                isAdmin: false
+              };
+              setUser(fallbackUser);
+            });
+        } else {
+          setUser(parsedUser);
+        }
       } catch (error) {
         localStorage.removeItem('accessToken');
         localStorage.removeItem('idToken');
@@ -44,6 +73,23 @@ export const AuthProvider = ({ children }) => {
         
         // Get user info from ID token
         const userInfo = await authAPI.getUserInfo();
+        
+        console.log('AuthContext - userInfo from API:', userInfo);
+        
+        // If no groups in token, fetch from backend
+        if (!userInfo.groups || userInfo.groups.length === 0) {
+          console.log('AuthContext - no groups in token, fetching from backend...');
+          try {
+            const groupsInfo = await authAPI.getUserGroups();
+            console.log('AuthContext - groups from backend:', groupsInfo);
+            userInfo.groups = groupsInfo.groups || [];
+            userInfo.isAdmin = groupsInfo.isAdmin || false;
+          } catch (error) {
+            console.warn('AuthContext - failed to fetch groups from backend:', error);
+            userInfo.groups = [];
+            userInfo.isAdmin = false;
+          }
+        }
         
         localStorage.setItem('user', JSON.stringify(userInfo));
         setUser(userInfo);

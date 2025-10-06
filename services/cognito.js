@@ -293,6 +293,21 @@ class CognitoService {
 		}
 	}
 
+	async getUserGroups(username) {
+		await this.ensureConfigured();
+		try {
+			const command = new AdminListGroupsForUserCommand({
+				UserPoolId: this.userPoolId,
+				Username: username
+			});
+			const result = await this.client.send(command);
+			return (result.Groups || []).map(g => g.GroupName);
+		} catch (error) {
+			console.error('Get user groups error:', error);
+			throw new Error(`Failed to get user groups: ${error.message}`);
+		}
+	}
+
 	async respondToMFAChallenge(session, userCode, username = null) {
 		await this.ensureConfigured();
 		try {

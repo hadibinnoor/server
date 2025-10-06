@@ -12,9 +12,12 @@ const api = axios.create({
 // Add request interceptor to include auth token
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('accessToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    // Respect explicitly provided Authorization header
+    if (!config.headers.Authorization && !config.headers.authorization) {
+      const token = localStorage.getItem('accessToken');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
     }
     return config;
   },
@@ -27,8 +30,10 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Only treat 401 as an auth failure. Do not auto-logout on 403 (forbidden)
-    if (error.response?.status === 401) {
+    // Only treat 401 as an auth failure for critical endpoints. Don't auto-logout on group fetch or jobs failures
+    if (error.response?.status === 401 && 
+        !error.config?.url?.includes('/user-groups') && 
+        !error.config?.url?.includes('/jobs/all')) {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('idToken');
       localStorage.removeItem('refreshToken');
@@ -56,7 +61,23 @@ export const authAPI = {
   },
 
   getUserInfo: async () => {
-    const response = await api.get('/auth/user');
+    // Use ID token to get groups claim
+    const idToken = localStorage.getItem('idToken');
+    const response = await api.get('/auth/user', {
+      headers: idToken ? { Authorization: `Bearer ${idToken}` } : undefined
+    });
+    return response.data;
+  },
+
+  // Get user groups from backend (fallback when token doesn't contain groups)
+  getUserGroups: async () => {
+    // Use ID token for group fetching
+    const idToken = localStorage.getItem('idToken');
+    console.log('getUserGroups - using ID token:', idToken ? idToken.substring(0, 50) + '...' : 'none');
+    
+    const response = await api.get('/auth/user-groups', {
+      headers: idToken ? { Authorization: `Bearer ${idToken}` } : undefined
+    });
     return response.data;
   },
 };
@@ -184,7 +205,13 @@ export const jobsAPI = {
 
   // Admin: get all jobs (requires Admins group)
   getAllJobs: async () => {
-    const response = await api.get('/jobs/all');
+    // Use access token for jobs endpoint (backend middleware expects access token)
+    const accessToken = localStorage.getItem('accessToken');
+    console.log('getAllJobs - using access token:', accessToken ? accessToken.substring(0, 50) + '...' : 'none');
+    
+    const response = await api.get('/jobs/all', {
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined
+    });
     return response.data;
   }
 };

@@ -161,6 +161,15 @@ router.get('/user', async (req, res) => {
     const decoded = jwt.decode(token);
     const groups = decoded?.['cognito:groups'] || decoded?.groups || [];
     
+    console.log('Auth /user endpoint - token analysis:', {
+      tokenType: decoded?.token_use,
+      username: decoded?.username || decoded?.['cognito:username'],
+      allClaims: Object.keys(decoded || {}).filter(k => k.startsWith('cognito:') || k === 'groups'),
+      cognitoGroups: decoded?.['cognito:groups'],
+      groups: decoded?.groups,
+      extractedGroups: groups
+    });
+    
     res.json({
       username: decoded?.username || decoded?.['cognito:username'] || 'testuser',
       email: decoded?.email || 'test@example.com',
@@ -206,6 +215,74 @@ router.post('/confirm-manual', async (req, res) => {
   } catch (error) {
     console.error('Manual confirmation error:', error);
     res.status(400).json({ error: error.message });
+  }
+});
+
+// Get user groups from Cognito (fallback when token doesn't contain groups)
+router.get('/user-groups', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    
+    if (!token) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
+
+    try {
+      await cognitoService.ensureConfigured();
+    } catch (e) {
+      return res.status(503).json({ 
+        error: 'Authentication service not configured. Please configure AWS Cognito.' 
+      });
+    }
+
+    // Decode token to get username
+    const jwt = require('jsonwebtoken');
+    const decoded = jwt.decode(token);
+    const username = decoded?.username || decoded?.['cognito:username'];
+    
+    console.log('Auth /user-groups endpoint - token decode result:', {
+      hasDecoded: !!decoded,
+      username: username,
+      tokenType: decoded?.token_use,
+      allKeys: decoded ? Object.keys(decoded) : []
+    });
+    
+    if (!username) {
+      console.log('Auth /user-groups endpoint - no username found in token');
+      return res.json({
+        username: 'unknown',
+        groups: [],
+        isAdmin: false,
+        error: 'No username found in token'
+      });
+    }
+
+    console.log('Auth /user-groups endpoint - fetching groups for:', username);
+
+    try {
+      // Fetch groups from Cognito
+      const groups = await cognitoService.getUserGroups(username);
+      console.log('Auth /user-groups endpoint - groups fetched:', groups);
+      
+      res.json({
+        username,
+        groups: groups || [],
+        isAdmin: groups && (groups.includes('Admins') || groups.includes('Admin'))
+      });
+    } catch (cognitoError) {
+      console.error('Auth /user-groups endpoint - Cognito error:', cognitoError.message);
+      
+      // Fallback: return empty groups if Cognito fails
+      res.json({
+        username,
+        groups: [],
+        isAdmin: false,
+        error: 'Failed to fetch groups from Cognito'
+      });
+    }
+  } catch (error) {
+    console.error('Get user groups error:', error);
+    res.status(401).json({ error: 'Invalid token' });
   }
 });
 
