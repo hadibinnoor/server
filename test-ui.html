@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Transcoding API Tester</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        input, button, select { padding: 8px; margin: 5px; }
+        input[type="text"], input[type="file"] { width: 300px; }
+        button { background: #007cba; color: white; border: none; cursor: pointer; }
+        button:hover { background: #005a87; }
+        .result { background: #f5f5f5; padding: 10px; margin: 10px 0; white-space: pre-wrap; }
+        .error { background: #ffe6e6; color: #cc0000; }
+        .success { background: #e6ffe6; color: #006600; }
+    </style>
+</head>
+<body>
+    <h1>Video Transcoding API Tester</h1>
+    <p><strong>Note:</strong> This is for testing only - the assignment doesn't require a frontend.</p>
+    
+    <div class="section">
+        <h3>API Configuration</h3>
+        <input type="text" id="baseUrl" placeholder="http://your-ec2-ip:3000" value="http://localhost:3000">
+        <button onclick="testHealth()">Test Health</button>
+        <div id="healthResult" class="result"></div>
+    </div>
+
+    <div class="section">
+        <h3>Authentication</h3>
+        <input type="text" id="username" placeholder="Username" value="admin">
+        <input type="text" id="password" placeholder="Password" value="admin123">
+        <button onclick="login()">Login</button>
+        <div id="loginResult" class="result"></div>
+        <div id="tokenDisplay" class="result" style="display:none;"></div>
+    </div>
+
+    <div class="section">
+        <h3>Upload Video</h3>
+        <input type="file" id="videoFile" accept="video/*">
+        <select id="outputFormat">
+            <option value="480p">480p</option>
+            <option value="720p" selected>720p</option>
+            <option value="1080p">1080p</option>
+        </select>
+        <button onclick="uploadVideo()">Upload & Transcode</button>
+        <div id="uploadResult" class="result"></div>
+    </div>
+
+    <div class="section">
+        <h3>Jobs Management</h3>
+        <button onclick="getJobs()">Get All Jobs</button>
+        <input type="text" id="jobId" placeholder="Job ID">
+        <button onclick="getJob()">Get Job Status</button>
+        <button onclick="deleteJob()">Delete Job</button>
+        <div id="jobsResult" class="result"></div>
+    </div>
+
+    <div class="section">
+        <h3>Load Test</h3>
+        <button onclick="runLoadTest()">Run Load Test (3 concurrent uploads)</button>
+        <div id="loadTestResult" class="result"></div>
+    </div>
+
+    <script>
+        let authToken = '';
+        
+        function getBaseUrl() {
+            return document.getElementById('baseUrl').value.trim();
+        }
+        
+        function showResult(elementId, message, isError = false) {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.className = isError ? 'result error' : 'result success';
+        }
+        
+        async function testHealth() {
+            try {
+                const response = await fetch(`${getBaseUrl()}/health`);
+                const data = await response.json();
+                showResult('healthResult', `Health check passed\n${JSON.stringify(data, null, 2)}`);
+            } catch (error) {
+                showResult('healthResult', `Health check failed: ${error.message}`, true);
+            }
+        }
+        
+        async function login() {
+            try {
+                const username = document.getElementById('username').value;
+                const password = document.getElementById('password').value;
+                
+                const response = await fetch(`${getBaseUrl()}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    authToken = data.token;
+                    showResult('loginResult', 'Login successful');
+                    document.getElementById('tokenDisplay').style.display = 'block';
+                    document.getElementById('tokenDisplay').textContent = `Token: ${authToken.substring(0, 50)}...`;
+                } else {
+                    showResult('loginResult', `Login failed: ${data.error}`, true);
+                }
+            } catch (error) {
+                showResult('loginResult', `Login error: ${error.message}`, true);
+            }
+        }
+        
+        async function uploadVideo() {
+            if (!authToken) {
+                showResult('uploadResult', 'Please login first', true);
+                return;
+            }
+            
+            const fileInput = document.getElementById('videoFile');
+            const outputFormat = document.getElementById('outputFormat').value;
+            
+            if (!fileInput.files[0]) {
+                showResult('uploadResult', 'Please select a video file', true);
+                return;
+            }
+            
+            try {
+                const formData = new FormData();
+                formData.append('video', fileInput.files[0]);
+                formData.append('outputFormat', outputFormat);
+                
+                showResult('uploadResult', '⏳ Uploading video...');
+                
+                const response = await fetch(`${getBaseUrl()}/jobs/upload`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${authToken}` },
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showResult('uploadResult', `Upload successful!\nJob ID: ${data.jobId}\nOutput Format: ${data.outputFormat}\n\n${JSON.stringify(data, null, 2)}`);
+                    document.getElementById('jobId').value = data.jobId;
+                } else {
+                    showResult('uploadResult', `Upload failed: ${data.error}`, true);
+                }
+            } catch (error) {
+                showResult('uploadResult', `Upload error: ${error.message}`, true);
+            }
+        }
+        
+        async function getJobs() {
+            if (!authToken) {
+                showResult('jobsResult', 'Please login first', true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${getBaseUrl()}/jobs`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showResult('jobsResult', `Jobs retrieved:\n${JSON.stringify(data, null, 2)}`);
+                } else {
+                    showResult('jobsResult', `Failed to get jobs: ${data.error}`, true);
+                }
+            } catch (error) {
+                showResult('jobsResult', `Error getting jobs: ${error.message}`, true);
+            }
+        }
+        
+        async function getJob() {
+            if (!authToken) {
+                showResult('jobsResult', 'Please login first', true);
+                return;
+            }
+            
+            const jobId = document.getElementById('jobId').value.trim();
+            if (!jobId) {
+                showResult('jobsResult', 'Please enter a job ID', true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${getBaseUrl()}/jobs/${jobId}`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showResult('jobsResult', `Job status:\n${JSON.stringify(data, null, 2)}`);
+                } else {
+                    showResult('jobsResult', `Failed to get job: ${data.error}`, true);
+                }
+            } catch (error) {
+                showResult('jobsResult', `Error getting job: ${error.message}`, true);
+            }
+        }
+        
+        async function deleteJob() {
+            if (!authToken) {
+                showResult('jobsResult', 'Please login first', true);
+                return;
+            }
+            
+            const jobId = document.getElementById('jobId').value.trim();
+            if (!jobId) {
+                showResult('jobsResult', 'Please enter a job ID', true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${getBaseUrl()}/jobs/${jobId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showResult('jobsResult', `Job deleted successfully`);
+                } else {
+                    showResult('jobsResult', `Failed to delete job: ${data.error}`, true);
+                }
+            } catch (error) {
+                showResult('jobsResult', `Error deleting job: ${error.message}`, true);
+            }
+        }
+        
+        async function runLoadTest() {
+            if (!authToken) {
+                showResult('loadTestResult', 'Please login first', true);
+                return;
+            }
+            
+            showResult('loadTestResult', '⏳ Starting load test with 3 concurrent uploads...');
+            
+            try {
+                // Create fake video data for load testing
+                const fakeVideoData = new Blob(['fake video content '.repeat(10000)], { type: 'video/mp4' });
+                const formats = ['480p', '720p', '1080p'];
+                
+                const uploadPromises = formats.map(async (format, index) => {
+                    const formData = new FormData();
+                    formData.append('video', fakeVideoData, `load-test-${index}.mp4`);
+                    formData.append('outputFormat', format);
+                    
+                    const response = await fetch(`${getBaseUrl()}/jobs/upload`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${authToken}` },
+                        body: formData
+                    });
+                    
+                    return response.json();
+                });
+                
+                const results = await Promise.all(uploadPromises);
+                const successCount = results.filter(r => r.jobId).length;
+                
+                showResult('loadTestResult', 
+                    `Load test completed!\n` +
+                    `${successCount}/3 uploads successful\n` +
+                    `Check CloudWatch for CPU usage spikes!\n\n` +
+                    `Results:\n${JSON.stringify(results, null, 2)}`
+                );
+                
+            } catch (error) {
+                showResult('loadTestResult', `Load test failed: ${error.message}`, true);
+            }
+        }
+    </script>
+</body>
+</html>
